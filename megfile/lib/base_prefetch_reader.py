@@ -8,7 +8,7 @@ from math import ceil
 from statistics import mean
 from typing import Optional
 
-from megfile.config import BACKOFF_FACTOR, BACKOFF_INITIAL, DEFAULT_BLOCK_CAPACITY, DEFAULT_BLOCK_SIZE, GLOBAL_MAX_WORKERS, NEWLINE
+from megfile.config import BACKOFF_FACTOR, BACKOFF_INITIAL, DEFAULT_BLOCK_CAPACITY, DEFAULT_BLOCK_SIZE, DEFAULT_MAX_RETRY_TIMES, GLOBAL_MAX_WORKERS, NEWLINE
 from megfile.interfaces import Readable, Seekable
 from megfile.utils import get_human_size, process_local
 
@@ -23,7 +23,7 @@ class SeekRecord:
         self.read_count = 0
 
 
-class BasePrefetchReader(Readable, Seekable, ABC):
+class BasePrefetchReader(Readable[bytes], Seekable, ABC):
     '''
     Reader to fast read the remote file content. 
     This will divide the file content into equal parts of block_size size, 
@@ -39,7 +39,7 @@ class BasePrefetchReader(Readable, Seekable, ABC):
             block_size: int = DEFAULT_BLOCK_SIZE,
             block_capacity: int = DEFAULT_BLOCK_CAPACITY,
             block_forward: Optional[int] = None,
-            max_retries: int = 10,
+            max_retries: int = DEFAULT_MAX_RETRY_TIMES,
             max_workers: Optional[int] = None,
             **kwargs):
 
@@ -112,7 +112,7 @@ class BasePrefetchReader(Readable, Seekable, ABC):
             self._backoff_size *= BACKOFF_FACTOR
         self.__offset = value
 
-    def seek(self, cookie: int, whence: int = os.SEEK_SET) -> int:
+    def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
         '''Change stream position.
 
         Seek to byte offset pos relative to position indicated by whence:
@@ -127,11 +127,11 @@ class BasePrefetchReader(Readable, Seekable, ABC):
             raise IOError('file already closed: %r' % self.name)
 
         if whence == os.SEEK_CUR:
-            target_offset = self._offset + cookie
+            target_offset = self._offset + offset
         elif whence == os.SEEK_END:
-            target_offset = self._content_size + cookie
+            target_offset = self._content_size + offset
         elif whence == os.SEEK_SET:
-            target_offset = cookie
+            target_offset = offset
         else:
             raise ValueError('invalid whence: %r' % whence)
 
@@ -271,7 +271,7 @@ class BasePrefetchReader(Readable, Seekable, ABC):
 
     @property
     def _is_alive(self):
-        return not self._executor._shutdown  # pytype: disable=attribute-error
+        return not self._executor._shutdown
 
     @property
     def _is_downloading(self):
@@ -307,7 +307,7 @@ class BasePrefetchReader(Readable, Seekable, ABC):
         return self._buffer
 
     def _seek_buffer(self, index: int, offset: int = 0):
-        # The corresponding block is probably not downloaded when seeked to a new position
+        # The corresponding block is probably not downloaded when seek to a new position
         # So record the offset first, set it when it is accessed
         if self._is_auto_scaling:  # When user doesn't define forward
             history = []
@@ -329,7 +329,8 @@ class BasePrefetchReader(Readable, Seekable, ABC):
 
     @abstractmethod
     def _fetch_response(
-            self, start: Optional[int] = None,
+            self,
+            start: Optional[int] = None,
             end: Optional[int] = None) -> dict:
         pass
 

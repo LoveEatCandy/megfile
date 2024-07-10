@@ -1,9 +1,8 @@
-import os
 from concurrent.futures import Future
 from io import BytesIO
 from typing import Optional
 
-from megfile.config import BACKOFF_FACTOR, BACKOFF_INITIAL, DEFAULT_BLOCK_CAPACITY, DEFAULT_BLOCK_SIZE, GLOBAL_MAX_WORKERS, NEWLINE
+from megfile.config import BACKOFF_FACTOR, BACKOFF_INITIAL, DEFAULT_BLOCK_CAPACITY, DEFAULT_BLOCK_SIZE, GLOBAL_MAX_WORKERS, NEWLINE, S3_MAX_RETRY_TIMES
 from megfile.errors import S3FileChangedError, S3InvalidRangeError, patch_method, raise_s3_error, s3_should_retry
 from megfile.lib.base_prefetch_reader import BasePrefetchReader, LRUCacheFutureManager
 
@@ -34,7 +33,7 @@ class S3PrefetchReader(BasePrefetchReader):
             block_size: int = DEFAULT_BLOCK_SIZE,
             block_capacity: int = DEFAULT_BLOCK_CAPACITY,
             block_forward: Optional[int] = None,
-            max_retries: int = 10,
+            max_retries: int = S3_MAX_RETRY_TIMES,
             max_workers: Optional[int] = None,
             profile_name: Optional[str] = None):
 
@@ -42,6 +41,8 @@ class S3PrefetchReader(BasePrefetchReader):
         self._key = key
         self._client = s3_client
         self._profile_name = profile_name
+        self._content_etag = None
+        self._content_info = None
 
         super().__init__(
             block_size=block_size,
@@ -58,7 +59,7 @@ class S3PrefetchReader(BasePrefetchReader):
                 first_index_response['ContentRange'].split('/')[-1])
         except S3InvalidRangeError:
             # usually when read a empty file
-            # TODO: use minio test empty file: https://hub.docker.com/r/minio/minio
+            # can use minio test empty file: https://hub.docker.com/r/minio/minio
             first_index_response = self._fetch_response()
             content_size = int(first_index_response['ContentLength'])
 
@@ -76,7 +77,8 @@ class S3PrefetchReader(BasePrefetchReader):
             self._bucket, self._key)
 
     def _fetch_response(
-            self, start: Optional[int] = None,
+            self,
+            start: Optional[int] = None,
             end: Optional[int] = None) -> dict:
 
         def fetch_response() -> dict:
@@ -103,9 +105,9 @@ class S3PrefetchReader(BasePrefetchReader):
             index + 1) * self._block_size - 1
         response = self._fetch_response(start=start, end=end)
         etag = response.get('ETag', None)
-        if etag is not None and etag != self._content_etag:  # pytype: disable=attribute-error
+        if etag is not None and etag != self._content_etag:
             raise S3FileChangedError(
                 'File changed: %r, etag before: %s, after: %s' %
-                (self.name, self._content_info, response))  # pytype: disable=attribute-error
+                (self.name, self._content_info, response))
 
         return response['Body']

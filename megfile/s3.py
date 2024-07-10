@@ -60,7 +60,8 @@ __all__ = [
 
 
 def s3_access(
-        path: PathLike, mode: Access = Access.READ,
+        path: PathLike,
+        mode: Access = Access.READ,
         followlinks: bool = False) -> bool:
     '''
     Test if path has access permission described by mode
@@ -79,7 +80,7 @@ def s3_exists(path: PathLike, followlinks: bool = False) -> bool:
     If the bucket of s3_url are not permitted to read, return False
 
     :param path: Given path
-    :returns: True if s3_url eixsts, else False
+    :returns: True if s3_url exists, else False
     '''
     return S3Path(path).exists(followlinks)
 
@@ -139,10 +140,10 @@ def s3_isfile(path: PathLike, followlinks: bool = False) -> bool:
 
 def s3_listdir(path: PathLike, followlinks: bool = False) -> List[str]:
     '''
-    Get all contents of given s3_url. The result is in acsending alphabetical order.
+    Get all contents of given s3_url. The result is in ascending alphabetical order.
 
     :param path: Given path
-    :returns: All contents have prefix of s3_url in acsending alphabetical order
+    :returns: All contents have prefix of s3_url in ascending alphabetical order
     :raises: S3FileNotFoundError, S3NotADirectoryError
     '''
     return S3Path(path).listdir(followlinks)
@@ -164,19 +165,21 @@ def s3_hasbucket(path: PathLike) -> bool:
     Test if the bucket of s3_url exists
 
     :param path: Given path
-    :returns: True if bucket of s3_url eixsts, else False
+    :returns: True if bucket of s3_url exists, else False
     '''
     return S3Path(path).hasbucket()
 
 
-def s3_move(src_url: PathLike, dst_url: PathLike) -> None:
+def s3_move(
+        src_url: PathLike, dst_url: PathLike, overwrite: bool = True) -> None:
     '''
     Move file/directory path from src_url to dst_url
 
     :param src_url: Given path
     :param dst_url: Given destination path
+    :param overwrite: whether or not overwrite file when exists
     '''
-    return S3Path(src_url).move(dst_url)
+    return S3Path(src_url).move(dst_url, overwrite)
 
 
 def s3_remove(path: PathLike, missing_ok: bool = False) -> None:
@@ -190,7 +193,8 @@ def s3_remove(path: PathLike, missing_ok: bool = False) -> None:
     return S3Path(path).remove(missing_ok)
 
 
-def s3_scan(path: PathLike, missing_ok: bool = True,
+def s3_scan(path: PathLike,
+            missing_ok: bool = True,
             followlinks: bool = False) -> Iterator[str]:
     '''
     Iteratively traverse only files in given s3 directory, in alphabetical order.
@@ -211,7 +215,8 @@ def s3_scan(path: PathLike, missing_ok: bool = True,
 
 
 def s3_scan_stat(
-        path: PathLike, missing_ok: bool = True,
+        path: PathLike,
+        missing_ok: bool = True,
         followlinks: bool = False) -> Iterator[FileEntry]:
     '''
     Iteratively traverse only files in given directory, in alphabetical order.
@@ -262,8 +267,10 @@ def s3_unlink(path: PathLike, missing_ok: bool = False) -> None:
     return S3Path(path).unlink(missing_ok)
 
 
-def s3_walk(path: PathLike, followlinks: bool = False
-           ) -> Iterator[Tuple[str, List[str], List[str]]]:
+def s3_walk(
+        path: PathLike,
+        followlinks: bool = False
+) -> Iterator[Tuple[str, List[str], List[str]]]:
     '''
     Iteratively traverse the given s3 directory, in top-bottom order. In other words, firstly traverse parent directory, if subdirectories exist, traverse the subdirectories in alphabetical order.
     Every iteration on generator yields a 3-tuple: (root, dirs, files)
@@ -287,7 +294,8 @@ def s3_walk(path: PathLike, followlinks: bool = False
 
 
 def s3_getmd5(
-        path: PathLike, recalculate: bool = False,
+        path: PathLike,
+        recalculate: bool = False,
         followlinks: bool = False) -> str:
     '''
     Get md5 meta info in files that uploaded/copied via megfile
@@ -305,33 +313,38 @@ def s3_getmd5(
 def s3_copy(
         src_url: PathLike,
         dst_url: PathLike,
+        callback: Optional[Callable[[int], None]] = None,
         followlinks: bool = False,
-        callback: Optional[Callable[[int], None]] = None) -> None:
+        overwrite: bool = True) -> None:
     ''' File copy on S3
     Copy content of file on `src_path` to `dst_path`.
-    It's caller's responsebility to ensure the s3_isfile(src_url) == True
+    It's caller's responsibility to ensure the s3_isfile(src_url) == True
 
     :param src_url: Given path
     :param dst_path: Target file path
     :param callback: Called periodically during copy, and the input parameter is the data size (in bytes) of copy since the last call
+    :param followlinks: False if regard symlink as file, else True
+    :param overwrite: whether or not overwrite file when exists, default is True
     '''
-    return S3Path(src_url).copy(dst_url, followlinks, callback)
+    return S3Path(src_url).copy(dst_url, callback, followlinks, overwrite)
 
 
 def s3_sync(
         src_url: PathLike,
         dst_url: PathLike,
         followlinks: bool = False,
-        force: bool = False) -> None:
+        force: bool = False,
+        overwrite: bool = True) -> None:
     '''
     Copy file/directory on src_url to dst_url
 
     :param src_url: Given path
     :param dst_url: Given destination path
     :param followlinks: False if regard symlink as file, else True
-    :param force: Sync file forcely, do not ignore same files
+    :param force: Sync file forcible, do not ignore same files, priority is higher than 'overwrite', default is False
+    :param overwrite: whether or not overwrite file when exists, default is True
     '''
-    return S3Path(src_url).sync(dst_url, followlinks, force)
+    return S3Path(src_url).sync(dst_url, followlinks, force, overwrite)
 
 
 def s3_symlink(src_path: PathLike, dst_path: PathLike) -> None:
@@ -339,7 +352,7 @@ def s3_symlink(src_path: PathLike, dst_path: PathLike) -> None:
     Create a symbolic link pointing to src_path named dst_path.
 
     :param src_path: Given path
-    :param dst_path: Desination path
+    :param dst_path: Destination path
     :raises: S3NameTooLongError, S3BucketNotFoundError, S3IsADirectoryError
     '''
     return S3Path(src_path).symlink(dst_path)

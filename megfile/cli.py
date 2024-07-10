@@ -14,7 +14,7 @@ from megfile.config import DEFAULT_BLOCK_SIZE
 from megfile.hdfs_path import DEFAULT_HDFS_TIMEOUT
 from megfile.interfaces import FileEntry
 from megfile.lib.glob import get_non_glob_dir, has_magic
-from megfile.smart import _smart_sync_single_file, smart_copy, smart_exists, smart_getmd5, smart_getmtime, smart_getsize, smart_glob_stat, smart_isdir, smart_isfile, smart_makedirs, smart_move, smart_open, smart_path_join, smart_readlink, smart_realpath, smart_remove, smart_rename, smart_scan_stat, smart_scandir, smart_stat, smart_sync, smart_sync_with_progress, smart_touch, smart_unlink
+from megfile.smart import _smart_sync_single_file, smart_copy, smart_exists, smart_getmd5, smart_getmtime, smart_getsize, smart_glob_stat, smart_isdir, smart_isfile, smart_makedirs, smart_move, smart_open, smart_path_join, smart_readlink, smart_remove, smart_rename, smart_scan_stat, smart_scandir, smart_stat, smart_sync, smart_sync_with_progress, smart_touch, smart_unlink
 from megfile.smart_path import SmartPath
 from megfile.utils import get_human_size
 from megfile.version import VERSION
@@ -174,12 +174,14 @@ def ll(path: str, recursive: bool):
     is_flag=True,
     help='treat dst_path as a normal file.')
 @click.option('-g', '--progress-bar', is_flag=True, help='Show progress bar.')
+@click.option('--skip', is_flag=True, help='Skip existed files.')
 def cp(
-        src_path: str,
-        dst_path: str,
-        recursive: bool,
-        no_target_directory: bool,
-        progress_bar: bool,
+    src_path: str,
+    dst_path: str,
+    recursive: bool,
+    no_target_directory: bool,
+    progress_bar: bool,
+    skip: bool,
 ):
     if not no_target_directory and (dst_path.endswith('/') or
                                     smart_isdir(dst_path)):
@@ -193,14 +195,16 @@ def cp(
                     dst_path,
                     followlinks=True,
                     map_func=executor.map,
-                    force=True)
+                    force=True,
+                    overwrite=not skip)
             else:
                 smart_sync(
                     src_path,
                     dst_path,
                     followlinks=True,
                     map_func=executor.map,
-                    force=True)
+                    force=True,
+                    overwrite=not skip)
     else:
         if progress_bar:
             file_size = smart_stat(src_path).size
@@ -214,10 +218,11 @@ def cp(
             def callback(length: int):
                 sbar.update(length)
 
-            smart_copy(src_path, dst_path, callback=callback)
+            smart_copy(
+                src_path, dst_path, callback=callback, overwrite=not skip)
             sbar.close()
         else:
-            smart_copy(src_path, dst_path)
+            smart_copy(src_path, dst_path, overwrite=not skip)
 
 
 @cli.command(short_help='Move files from source to dest.')
@@ -236,12 +241,14 @@ def cp(
     is_flag=True,
     help='treat dst_path as a normal file.')
 @click.option('-g', '--progress-bar', is_flag=True, help='Show progress bar.')
+@click.option('--skip', is_flag=True, help='Skip existed files.')
 def mv(
-        src_path: str,
-        dst_path: str,
-        recursive: bool,
-        no_target_directory: bool,
-        progress_bar: bool,
+    src_path: str,
+    dst_path: str,
+    recursive: bool,
+    no_target_directory: bool,
+    progress_bar: bool,
+    skip: bool,
 ):
     if not no_target_directory and (dst_path.endswith('/') or
                                     smart_isdir(dst_path)):
@@ -253,15 +260,16 @@ def mv(
         if recursive:
             if src_protocol == dst_protocol:
                 with tqdm(total=1) as t:
-                    SmartPath(src_path).rename(dst_path)
+                    SmartPath(src_path).rename(dst_path, overwrite=not skip)
                     t.update(1)
             else:
-                smart_sync_with_progress(src_path, dst_path, followlinks=True)
+                smart_sync_with_progress(
+                    src_path, dst_path, followlinks=True, overwrite=not skip)
                 smart_remove(src_path)
         else:
             if src_protocol == dst_protocol:
                 with tqdm(total=1) as t:
-                    SmartPath(src_path).rename(dst_path)
+                    SmartPath(src_path).rename(dst_path, overwrite=not skip)
                     t.update(1)
             else:
                 file_size = smart_stat(src_path).size
@@ -275,12 +283,13 @@ def mv(
                 def callback(length: int):
                     sbar.update(length)
 
-                smart_copy(src_path, dst_path, callback=callback)
+                smart_copy(
+                    src_path, dst_path, callback=callback, overwrite=not skip)
                 smart_unlink(src_path)
                 sbar.close()
     else:
         move_func = smart_move if recursive else smart_rename
-        move_func(src_path, dst_path)
+        move_func(src_path, dst_path, overwrite=not skip)
 
 
 @cli.command(short_help='Remove files from path.')
@@ -312,11 +321,12 @@ def rm(path: str, recursive: bool):
     '-f',
     '--force',
     is_flag=True,
-    help='Copy files forcely, ignore same files.')
+    help='Copy files forcible, ignore same files.')
 @click.option('-q', '--quiet', is_flag=True, help='Not show any progress log.')
+@click.option('--skip', is_flag=True, help='Skip existed files.')
 def sync(
         src_path: str, dst_path: str, progress_bar: bool, worker: int,
-        force: bool, quiet: bool):
+        force: bool, quiet: bool, skip: bool):
     with ThreadPoolExecutor(max_workers=worker) as executor:
         if has_magic(src_path):
             src_root_path = get_non_glob_dir(src_path)
@@ -384,6 +394,7 @@ def sync(
                 followlinks=True,
                 callback_after_copy_file=callback_after_copy_file,
                 force=force,
+                overwrite=not skip,
             ) for file_entry in file_entries)
         list(executor.map(_smart_sync_single_file, params_iter))
     if not quiet:
@@ -408,8 +419,8 @@ def touch(path: str):
 @cli.command(short_help='Concatenate any files and send them to stdout.')
 @click.argument('path')
 def cat(path: str):
-    with smart_open(path, 'rb') as file:
-        shutil.copyfileobj(file, sys.stdout.buffer)
+    with smart_open(path, 'rb') as f:
+        shutil.copyfileobj(f, sys.stdout.buffer)  # pytype: disable=wrong-arg-types
 
 
 @cli.command(

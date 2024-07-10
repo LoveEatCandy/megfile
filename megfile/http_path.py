@@ -1,17 +1,19 @@
-import io
 import time
+from copy import deepcopy
 from functools import partial
-from io import BufferedReader
+from io import BufferedReader, BytesIO
 from logging import getLogger as get_logger
+from threading import Lock
 from typing import Iterable, Iterator, Optional, Tuple, Union
 
 import requests
+from urllib3 import HTTPResponse
 
-from megfile.config import DEFAULT_BLOCK_SIZE
+from megfile.config import DEFAULT_BLOCK_SIZE, HTTP_MAX_RETRY_TIMES
 from megfile.errors import http_should_retry, patch_method, translate_http_error
-from megfile.interfaces import PathLike, StatResult, URIPath
+from megfile.interfaces import PathLike, Readable, StatResult, URIPath
 from megfile.lib.compat import fspath
-from megfile.lib.http_prefetch_reader import HttpPrefetchReader
+from megfile.lib.http_prefetch_reader import DEFAULT_TIMEOUT, HttpPrefetchReader
 from megfile.lib.s3_buffered_writer import DEFAULT_MAX_BUFFER_SIZE
 from megfile.lib.url import get_url_scheme
 from megfile.pathlike import PathLike
@@ -27,12 +29,12 @@ __all__ = [
 ]
 
 _logger = get_logger(__name__)
-max_retries = 10
+max_retries = HTTP_MAX_RETRY_TIMES
 
 
 def get_http_session(
-        timeout: Union[int, Tuple[int, int]] = (9, 60),
-        status_forcelist: Iterable[int] = (500, 502, 503, 504)
+    timeout: Optional[Union[int, Tuple[int, int]]] = DEFAULT_TIMEOUT,
+    status_forcelist: Iterable[int] = (500, 502, 503, 504)
 ) -> requests.Session:
     session = requests.Session()
 
@@ -47,24 +49,24 @@ def get_http_session(
             kwargs)
 
     def retry_callback(
-            error,
-            method,
-            url,
-            params=None,
-            data=None,
-            headers=None,
-            cookies=None,
-            files=None,
-            auth=None,
-            timeout=None,
-            allow_redirects=True,
-            proxies=None,
-            hooks=None,
-            stream=None,
-            verify=None,
-            cert=None,
-            json=None,
-            **kwargs,
+        error,
+        method,
+        url,
+        params=None,
+        data=None,
+        headers=None,
+        cookies=None,
+        files=None,
+        auth=None,
+        timeout=None,
+        allow_redirects=True,
+        proxies=None,
+        hooks=None,
+        stream=None,
+        verify=None,
+        cert=None,
+        json=None,
+        **kwargs,
     ):
         if data and hasattr(data, 'seek'):
             data.seek(0)
@@ -81,10 +83,10 @@ def get_http_session(
                     return file_object
                 elif hasattr(file_object, 'name'):
                     with SmartPath(file_object.name).open('rb') as f:
-                        return io.BytesIO(f.read())
+                        return BytesIO(f.read())
                 else:
                     _logger.warning(
-                        f'Can not retry http request, because the file object is not seekable and unsupport "name"'
+                        f'Can not retry http request, because the file object is not seekable and not support "name"'
                     )
                     raise
 
@@ -171,9 +173,11 @@ class HttpPath(URIPath):
     protocol = "http"
 
     def __init__(self, path: PathLike, *other_paths: PathLike):
-        if str(path).startswith('https://'):
-            self.protocol = 'https'
         super().__init__(path, *other_paths)
+
+        if fspath(path).startswith('https://'):
+            self.protocol = 'https'
+        self.request_kwargs = {}
 
     @binary_open
     def open(
@@ -203,9 +207,15 @@ class HttpPath(URIPath):
             raise ValueError('unacceptable mode: %r' % mode)
 
         response = None
+        request_kwargs = deepcopy(self.request_kwargs)
+        timeout = request_kwargs.pop('timeout', DEFAULT_TIMEOUT)
+        stream = request_kwargs.pop('stream', True)
         try:
-            response = get_http_session(status_forcelist=()).get(
-                self.path_with_protocol, stream=True)
+            response = get_http_session(
+                timeout=timeout,
+                status_forcelist=(),
+            ).get(
+                self.path_with_protocol, stream=stream, **request_kwargs)
             response.raise_for_status()
         except Exception as error:
             if response:
@@ -213,8 +223,9 @@ class HttpPath(URIPath):
             raise translate_http_error(error, self.path_with_protocol)
 
         content_size = int(response.headers['Content-Length'])
-        if response.headers.get(
-                'Accept-Ranges') == 'bytes' and content_size >= block_size * 2:
+        if (response.headers.get('Accept-Ranges') == 'bytes' and
+                content_size >= block_size * 2 and
+                not response.headers.get('Content-Encoding')):
             response.close()
 
             block_capacity = max_buffer_size // block_size
@@ -224,7 +235,7 @@ class HttpPath(URIPath):
                 block_forward = max(int(block_capacity * forward_ratio), 1)
 
             reader = HttpPrefetchReader(
-                self.path_with_protocol,
+                self,
                 content_size=content_size,
                 max_retries=max_retries,
                 max_workers=max_concurrency,
@@ -232,13 +243,16 @@ class HttpPath(URIPath):
                 block_forward=block_forward,
                 block_size=block_size,
             )
-            if _is_pickle(reader):  # pytype: disable=wrong-arg-types
-                reader = io.BufferedReader(reader)  # pytype: disable=wrong-arg-types
+            if _is_pickle(reader):
+                reader = BufferedReader(reader)  # type: ignore
             return reader
 
-        response.raw.auto_close = False
         response.raw.name = self.path_with_protocol
-        return BufferedReader(response.raw)
+        # TODO: When python version must bigger than 3.10, use urllib3>=2.0.0 instead of 'Response'
+        # response.raw.auto_close = False
+        # response.raw.decode_content = True
+        # return BufferedReader(response.raw)
+        return BufferedReader(Response(response.raw))  # type: ignore
 
     def stat(self, follow_symlinks=True) -> StatResult:
         '''
@@ -249,9 +263,14 @@ class HttpPath(URIPath):
         :raises: HttpPermissionError, HttpFileNotFoundError
         '''
 
+        request_kwargs = deepcopy(self.request_kwargs)
+        timeout = request_kwargs.pop('timeout', DEFAULT_TIMEOUT)
+        stream = request_kwargs.pop('stream', True)
+
         try:
-            with get_http_session(status_forcelist=()).get(
-                    self.path_with_protocol, stream=True) as response:
+            with get_http_session(timeout=timeout, status_forcelist=()).get(
+                    self.path_with_protocol, stream=stream,
+                    **request_kwargs) as response:
                 response.raise_for_status()
                 headers = response.headers
         except Exception as error:
@@ -260,15 +279,22 @@ class HttpPath(URIPath):
         size = headers.get('Content-Length')
         if size:
             size = int(size)
+        else:
+            size = 0
 
         last_modified = headers.get('Last-Modified')
         if last_modified:
             last_modified = time.mktime(
                 time.strptime(last_modified, "%a, %d %b %Y %H:%M:%S %Z"))
+        else:
+            last_modified = 0.0
 
-        return StatResult(  # pyre-ignore[20]
-            size=size, mtime=last_modified, isdir=False,
-            islnk=False, extra=headers)
+        return StatResult(
+            size=size,
+            mtime=last_modified,
+            isdir=False,
+            islnk=False,
+            extra=headers)
 
     def getsize(self, follow_symlinks: bool = False) -> int:
         '''
@@ -302,9 +328,14 @@ class HttpPath(URIPath):
         :return: return True if exists
         :rtype: bool
         """
+        request_kwargs = deepcopy(self.request_kwargs)
+        timeout = request_kwargs.pop('timeout', DEFAULT_TIMEOUT)
+        stream = request_kwargs.pop('stream', True)
+
         try:
-            with get_http_session(status_forcelist=()).get(
-                    self.path_with_protocol, stream=True) as response:
+            with get_http_session(timeout=timeout, status_forcelist=()).get(
+                    self.path_with_protocol, stream=stream,
+                    **request_kwargs) as response:
                 if response.status_code == 404:
                     return False
                 return True
@@ -316,3 +347,108 @@ class HttpPath(URIPath):
 class HttpsPath(HttpPath):
 
     protocol = "https"
+
+
+class Response(Readable[bytes]):
+
+    def __init__(self, raw: HTTPResponse) -> None:
+        super().__init__()
+
+        raw.auto_close = False
+        self._block_size = 128 * 2**10  # 128KB
+        self._raw = raw
+        self._offset = 0
+        self._buffer = BytesIO()
+        self._lock = Lock()
+
+    @property
+    def name(self):
+        return self._raw.name
+
+    @property
+    def mode(self):
+        return 'rb'
+
+    def tell(self) -> int:
+        return self._offset
+
+    def _clear_buffer(self) -> None:
+        self._buffer.seek(0)
+        self._buffer.truncate()
+
+    def read(self, size: Optional[int] = None) -> bytes:
+        if size == 0:
+            return b''
+        if size is not None and size < 0:
+            size = None
+
+        with self._lock:
+            while not size or self._buffer.tell() < size:
+                data = self._raw.read(self._block_size, decode_content=True)
+                if not data:
+                    break
+                self._buffer.write(data)
+            self._buffer.seek(0)
+            content = self._buffer.read(size)
+            residue = self._buffer.read()
+            self._clear_buffer()
+            if residue:
+                self._buffer.write(residue)
+            self._offset += len(content)
+        return content
+
+    def readline(self, size: Optional[int] = None) -> bytes:
+        if size == 0:
+            return b''
+        if size is not None and size < 0:
+            size = None
+
+        with self._lock:
+            self._buffer.seek(0)
+            buffer = self._buffer.read()
+            self._clear_buffer()
+            if b'\n' in buffer:
+                content = buffer[:buffer.index(b'\n') + 1]
+                if size:
+                    content = content[:size]
+                self._buffer.write(buffer[len(content):])
+            elif size and len(buffer) >= size:
+                content = buffer[:size]
+                self._buffer.write(buffer[size:])
+            else:
+                content = None
+                self._buffer.write(buffer)
+                while True:
+                    if size and self._buffer.tell() >= size:
+                        break
+                    data = self._raw.read(self._block_size, decode_content=True)
+                    if not data:
+                        break
+                    elif b"\n" in data:
+                        last_content, residue = data.split(b"\n", 1)
+                        self._buffer.write(last_content)
+                        self._buffer.write(b"\n")
+                        self._buffer.seek(0)
+                        content = self._buffer.read()
+                        self._clear_buffer()
+                        if size and len(content) > size:
+                            self._buffer.write(content[size:])
+                            content = content[:size]
+                        if residue:
+                            self._buffer.write(residue)
+                        break
+                    else:
+                        self._buffer.write(data)
+
+                if content is None:
+                    self._buffer.seek(0)
+                    content = self._buffer.read(size)
+                    residue = self._buffer.read()
+                    self._clear_buffer()
+                    if residue:
+                        self._buffer.write(residue)
+            self._offset += len(content)
+        return content
+
+    def _close(self) -> None:
+        return self._raw.close()

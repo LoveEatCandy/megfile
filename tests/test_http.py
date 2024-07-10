@@ -1,13 +1,14 @@
 import pickle
 import time
+from functools import cached_property
 from io import BufferedReader, BytesIO
+from typing import Optional
 
 import pytest
 import requests
 
 from megfile.errors import HttpFileNotFoundError, HttpPermissionError, UnknownError
 from megfile.http import get_http_session, http_exists, http_getmtime, http_getsize, http_open, http_stat, is_http
-from megfile.utils import cachedproperty
 
 
 def test_is_http():
@@ -16,12 +17,18 @@ def test_is_http():
     assert not is_http("no-http://www.baidu.com")
 
 
+class PatchedBytesIO(BytesIO):
+
+    def read(self, size: Optional[int] = None, **kwargs) -> bytes:
+        return super().read(size)
+
+
 class FakeResponse:
     status_code = 0
 
-    @cachedproperty
+    @cached_property
     def raw(self):
-        return BytesIO(b'test')
+        return PatchedBytesIO(b'test')
 
     @property
     def headers(self):
@@ -97,14 +104,21 @@ def test_http_open(mocker):
 
 
 def test_http_open_pickle(mocker):
-    requests_get_func = mocker.patch('requests.Session.get')
 
     class PickleResponse(FakeResponse):
         status_code = 200
 
-        @cachedproperty
+        @cached_property
         def raw(self):
             return BytesIO(pickle.dumps(b'test'))
+
+        @cached_property
+        def content(self):
+            return pickle.dumps(b'test')
+
+        @cached_property
+        def cookies(self):
+            return {}
 
         @property
         def headers(self):
@@ -115,8 +129,11 @@ def test_http_open_pickle(mocker):
                 'Accept-Ranges': 'bytes',
             }
 
+    requests_get_func = mocker.patch('requests.Session.get')
+    mocker.patch('requests.get', return_value=PickleResponse())
+
     requests_get_func.return_value = PickleResponse()
-    with http_open('http://test', 'rb') as http_reader:
+    with http_open('http://test', 'rb', block_size=1) as http_reader:
         assert isinstance(http_reader, BufferedReader)
 
 
@@ -141,7 +158,7 @@ def test_http_open_range(mocker):
         @property
         def headers(self):
             return {
-                "Content-Length": '4',
+                "Content-Length": str(len(self._content)),
                 'Content-Type': 'test/test',
                 "Last-Modified": "Wed, 24 Nov 2021 07:18:41 GMT",
                 'Accept-Ranges': 'bytes',

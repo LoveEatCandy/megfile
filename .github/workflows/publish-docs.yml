@@ -12,8 +12,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-20.04]
-        python-version: [3.9]
+        os: [ubuntu-22.04]
+        python-version: ["3.10"]
 
     steps:
       - name: Checkout Github Repository
@@ -46,4 +46,4 @@ jobs:
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./html_doc/html
+          publish_dir: ./html_doc

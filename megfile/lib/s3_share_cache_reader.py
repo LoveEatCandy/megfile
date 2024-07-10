@@ -3,7 +3,7 @@ from concurrent.futures import Future
 from logging import getLogger as get_logger
 from typing import Optional
 
-from megfile.config import DEFAULT_BLOCK_CAPACITY, DEFAULT_BLOCK_SIZE
+from megfile.config import DEFAULT_BLOCK_CAPACITY, DEFAULT_BLOCK_SIZE, S3_MAX_RETRY_TIMES
 from megfile.lib.s3_prefetch_reader import LRUCacheFutureManager, S3PrefetchReader
 from megfile.utils import thread_local
 
@@ -25,7 +25,7 @@ class S3ShareCacheReader(S3PrefetchReader):
             block_size: int = DEFAULT_BLOCK_SIZE,
             block_capacity: int = DEFAULT_BLOCK_CAPACITY,
             block_forward: Optional[int] = None,
-            max_retries: int = 10,
+            max_retries: int = S3_MAX_RETRY_TIMES,
             cache_key: str = 'lru',
             max_workers: Optional[int] = None,
             profile_name: Optional[str] = None):
@@ -44,14 +44,14 @@ class S3ShareCacheReader(S3PrefetchReader):
             profile_name=profile_name,
         )
 
-    def _get_futures(self):
+    def _get_futures(self) -> 'ShareCacheFutureManager':
         futures = thread_local(
             'S3ShareCacheReader.' + self._cache_key, ShareCacheFutureManager)
         futures.register(self.name)
         return futures
 
     def _seek_buffer(self, index: int, offset: int = 0):
-        # The corresponding block is probably not downloaded when seeked to a new position
+        # The corresponding block is probably not downloaded when sought to a new position
         # So record the offset first, set it when it is accessed
         self._cached_offset = offset
         self._block_index = index

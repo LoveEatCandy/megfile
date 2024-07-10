@@ -12,7 +12,7 @@ jobs:
     name: Unit Test (py${{ matrix.python-version}}, ${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-20.04]
+        os: [ubuntu-22.04]
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
 
     steps:
@@ -38,6 +38,7 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -r requirements.txt
           pip install -r requirements-hdfs.txt
+          pip install -r requirements-cli.txt
 
       - name: Run unit-test
         run: |
@@ -57,8 +58,8 @@ jobs:
     name: Style Check (py${{matrix.python-version}}, ${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-20.04]
-        python-version: [3.9]
+        os: [ubuntu-22.04]
+        python-version: ["3.10"]
 
     steps:
       - name: Checkout Github Repository
@@ -83,6 +84,7 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -r requirements.txt
           pip install -r requirements-hdfs.txt
+          pip install -r requirements-cli.txt
 
       - name: Run style-check
         run: |
@@ -93,8 +95,8 @@ jobs:
     name: Static Check (pytype, py${{matrix.python-version}}, ${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-20.04]
-        python-version: [3.9]
+        os: [ubuntu-22.04]
+        python-version: ["3.10"]
 
     steps:
       - name: Checkout Github Repository
@@ -119,6 +121,7 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -r requirements.txt
           pip install -r requirements-hdfs.txt
+          pip install -r requirements-cli.txt
 
       - name: Run static-check
         run: |
@@ -129,8 +132,8 @@ jobs:
     name: Security Check (bandit, py${{ matrix.python-version }}, ${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-20.04]
-        python-version: [3.9]
+        os: [ubuntu-22.04]
+        python-version: ["3.10"]
 
     steps:
       - name: Checkout Github Repository
@@ -155,6 +158,7 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -r requirements.txt
           pip install -r requirements-hdfs.txt
+          pip install -r requirements-cli.txt
 
       - name: Run bandit-check
         continue-on-error: true
@@ -177,8 +181,8 @@ jobs:
     name: Static Check (pyre, py${{matrix.python-version}}, ${{ matrix.os }})
     strategy:
       matrix:
-        os: [ubuntu-20.04]
-        python-version: [3.9]
+        os: [ubuntu-22.04]
+        python-version: ["3.10"]
 
     steps:
       - name: Checkout Github Repository
@@ -203,11 +207,11 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -r requirements.txt
           pip install -r requirements-hdfs.txt
+          pip install -r requirements-cli.txt
 
       - name: Run pyre-check
         continue-on-error: true
         run: |
-          pip install --upgrade pyre-check==0.9.6
           make pyre_check
 
       - name: Expose SARIF Results

@@ -1,3 +1,6 @@
+Hdfs Configuration
+==================
+
 Please use command `pip install 'megfile[hdfs]'` to install hdfs requirements.
 You can use environments and configuration file for configuration, and priority is that environment variables take precedence over configuration file.
 
@@ -9,6 +12,7 @@ You can use environments to setup authentication credentials and other configura
 - `HDFS_TIMEOUT`: request hdfs server timeout
 - `HDFS_TOKEN`: hdfs token if hdfs server require
 - `HDFS_CONFIG_PATH`: hdfs config file, default is `~/.hdfscli.cfg`
+- `MEGFILE_HDFS_MAX_RETRY_TIMES`: hdfs request max retry times when catch error which may fix by retry, default is `10`
 
 ### Use command
 You can update config file with `megfile` command easyly:

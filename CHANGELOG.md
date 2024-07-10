@@ -1,3 +1,33 @@
+## 3.1.0 - 2024.07.09
+- breaking change
+    - remove `megfile.utils.cachedproperty`
+    - modify the parameter order of `s3_download` and `s3_upload`
+    - change param `cookie` to `offset` in some `seek` functions
+- perf
+    - optimize the type annotations
+    - `FileLike` is subclass of `io.IOBase` and `typing.IO`
+- chore
+    - use `pyproject.toml` instead of `setup.py`
+
+## 3.0.6.post1 - 2024.06.21
+- fix
+    - add cli extras require, run `pip install 'megfile[cli]'` to install cli requirements
+
+## 3.0.6 - 2024.06.12
+- feat
+    - support more parameters of `requests` like `headers` in `HttpPath`.
+    - support `overwrite` parameter in `copy`, `sync` and `move` functions, default is `True`.
+    - cli command `mv`, `cp`, `sync` support `--skip` option, can skip existed files.
+- perf
+    - http request will check body size and retry when body is incomplete.
+
+## 3.0.5 - 2024.05.28
+- feat
+    - auto decode http content when response with `Content-Encoding` header 
+- perf
+    - add s3 retry code, retry request when catch response code `499`
+    - add environments for setup retry times: `MEGFILE_MAX_RETRY_TIMES`, `MEGFILE_S3_MAX_RETRY_TIMES`, `MEGFILE_HTTP_MAX_RETRY_TIMES`, `MEGFILE_HDFS_MAX_RETRY_TIMES`, `MEGFILE_SFTP_MAX_RETRY_TIMES`. default is `10`
+
 ## 3.0.4 - 2024.05.16
 - feat
     - Support more official S3 configurations. New env: `AWS_ENDPOINT_URL_S3`, `AWS_ENDPOINT_URL`.
@@ -27,7 +57,7 @@
     - fix symlink paths in command `ls` and `ll`
 
 ## 3.0.0 - 2024.01.22
-- Incompatible updates
+- breaking change
     - python3.6 and python3.7 is no longer supported
 - chore
     - support python3.12
@@ -134,7 +164,7 @@
 
 ## 2.2.3 - 2023.08.25
 - feat
-    - add `force` param in sync methods for copy file forcely
+    - add `force` param in sync methods for copy file forcible
     - add `-f` / `--force` in `refile sync`
     - check same file in copy, and raise `SameFileError`
 - perf

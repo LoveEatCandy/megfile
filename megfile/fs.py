@@ -161,10 +161,10 @@ def fs_isfile(path: PathLike, followlinks: bool = False) -> bool:
 
 def fs_listdir(path: PathLike) -> List[str]:
     '''
-    Get all contents of given fs path. The result is in acsending alphabetical order.
+    Get all contents of given fs path. The result is in ascending alphabetical order.
 
     :param path: Given path
-    :returns: All contents have in the path in acsending alphabetical order
+    :returns: All contents have in the path in ascending alphabetical order
     '''
     return FSPath(path).listdir()
 
@@ -209,7 +209,8 @@ def fs_remove(path: PathLike, missing_ok: bool = False) -> None:
     return FSPath(path).remove(missing_ok)
 
 
-def fs_scan(path: PathLike, missing_ok: bool = True,
+def fs_scan(path: PathLike,
+            missing_ok: bool = True,
             followlinks: bool = False) -> Iterator[str]:
     '''
     Iteratively traverse only files in given directory, in alphabetical order.
@@ -227,7 +228,8 @@ def fs_scan(path: PathLike, missing_ok: bool = True,
 
 
 def fs_scan_stat(
-        path: PathLike, missing_ok: bool = True,
+        path: PathLike,
+        missing_ok: bool = True,
         followlinks: bool = False) -> Iterator[FileEntry]:
     '''
     Iteratively traverse only files in given directory, in alphabetical order.
@@ -270,8 +272,10 @@ def fs_unlink(path: PathLike, missing_ok: bool = False) -> None:
     return FSPath(path).unlink(missing_ok)
 
 
-def fs_walk(path: PathLike, followlinks: bool = False
-           ) -> Iterator[Tuple[str, List[str], List[str]]]:
+def fs_walk(
+        path: PathLike,
+        followlinks: bool = False
+) -> Iterator[Tuple[str, List[str], List[str]]]:
     '''
     Generate the file names in a directory tree by walking the tree top-down.
     For each directory in the tree rooted at directory path (including path itself),
@@ -302,6 +306,7 @@ def fs_getmd5(
     :param path: Given path
     :param recalculate: Ignore this parameter, just for compatibility
     :param followlinks: Ignore this parameter, just for compatibility
+
     returns: md5 of file
     '''
     return FSPath(path).md5(recalculate, followlinks)
@@ -311,7 +316,8 @@ def fs_copy(
         src_path: PathLike,
         dst_path: PathLike,
         callback: Optional[Callable[[int], None]] = None,
-        followlinks: bool = False):
+        followlinks: bool = False,
+        overwrite: bool = True):
     ''' File copy on file system
     Copy content (excluding meta date) of file on `src_path` to `dst_path`. `dst_path` must be a complete file name
 
@@ -331,23 +337,26 @@ def fs_copy(
     :param dst_path: Target file path
     :param callback: Called periodically during copy, and the input parameter is the data size (in bytes) of copy since the last call
     :param followlinks: False if regard symlink as file, else True
+    :param overwrite: whether or not overwrite file when exists, default is True
     '''
-    return FSPath(src_path).copy(dst_path, callback, followlinks)
+    return FSPath(src_path).copy(dst_path, callback, followlinks, overwrite)
 
 
 def fs_sync(
         src_path: PathLike,
         dst_path: PathLike,
         followlinks: bool = False,
-        force: bool = False) -> None:
+        force: bool = False,
+        overwrite: bool = True) -> None:
     '''Force write of everything to disk.
 
     :param src_path: Given path
     :param dst_path: Target file path
     :param followlinks: False if regard symlink as file, else True
-    :param force: Sync file forcely, do not ignore same files
+    :param force: Sync file forcible, do not ignore same files, priority is higher than 'overwrite', default is False
+    :param overwrite: whether or not overwrite file when exists, default is True
     '''
-    return FSPath(src_path).sync(dst_path, followlinks, force)
+    return FSPath(src_path).sync(dst_path, followlinks, force, overwrite)
 
 
 def fs_symlink(src_path: PathLike, dst_path: PathLike) -> None:
@@ -355,7 +364,7 @@ def fs_symlink(src_path: PathLike, dst_path: PathLike) -> None:
     Create a symbolic link pointing to src_path named dst_path.
 
     :param src_path: Given path
-    :param dst_path: Desination path
+    :param dst_path: Destination path
     '''
     return FSPath(src_path).symlink(dst_path)
 

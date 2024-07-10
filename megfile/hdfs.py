@@ -1,4 +1,4 @@
-from typing import IO, AnyStr, BinaryIO, Iterator, List, Optional, Tuple
+from typing import IO, BinaryIO, Iterator, List, Optional, Tuple
 
 from megfile.hdfs_path import HdfsPath, hdfs_glob, hdfs_glob_stat, hdfs_iglob, hdfs_makedirs, is_hdfs
 from megfile.interfaces import FileEntry, PathLike, StatResult
@@ -37,7 +37,7 @@ def hdfs_exists(path: PathLike, followlinks: bool = False) -> bool:
     If the bucket of path are not permitted to read, return False
 
     :param path: Given path
-    :returns: True if path eixsts, else False
+    :returns: True if path exists, else False
     '''
     return HdfsPath(path).exists(followlinks)
 
@@ -131,14 +131,15 @@ def hdfs_load_from(path: PathLike, followlinks: bool = False) -> BinaryIO:
     return HdfsPath(path).load(followlinks)
 
 
-def hdfs_move(src_path: PathLike, dst_path: PathLike) -> None:
+def hdfs_move(
+        src_path: PathLike, dst_path: PathLike, overwrite: bool = True) -> None:
     '''
     Move file/directory path from src_path to dst_path
 
     :param src_path: Given path
     :param dst_path: Given destination path
     '''
-    return HdfsPath(src_path).move(dst_path)
+    return HdfsPath(src_path).move(dst_path, overwrite)
 
 
 def hdfs_remove(path: PathLike, missing_ok: bool = False) -> None:
@@ -153,7 +154,8 @@ def hdfs_remove(path: PathLike, missing_ok: bool = False) -> None:
 
 
 def hdfs_scan(
-        path: PathLike, missing_ok: bool = True,
+        path: PathLike,
+        missing_ok: bool = True,
         followlinks: bool = False) -> Iterator[str]:
     '''
     Iteratively traverse only files in given hdfs directory.
@@ -174,7 +176,8 @@ def hdfs_scan(
 
 
 def hdfs_scan_stat(
-        path: PathLike, missing_ok: bool = True,
+        path: PathLike,
+        missing_ok: bool = True,
         followlinks: bool = False) -> Iterator[FileEntry]:
     '''
     Iteratively traverse only files in given directory.
@@ -211,8 +214,10 @@ def hdfs_unlink(path: PathLike, missing_ok: bool = False) -> None:
     return HdfsPath(path).unlink(missing_ok)
 
 
-def hdfs_walk(path: PathLike, followlinks: bool = False
-             ) -> Iterator[Tuple[str, List[str], List[str]]]:
+def hdfs_walk(
+        path: PathLike,
+        followlinks: bool = False
+) -> Iterator[Tuple[str, List[str], List[str]]]:
     '''
     Iteratively traverse the given hdfs directory, in top-bottom order. In other words, firstly traverse parent directory, if subdirectories exist, traverse the subdirectories.
     Every iteration on generator yields a 3-tuple: (root, dirs, files)
@@ -235,7 +240,8 @@ def hdfs_walk(path: PathLike, followlinks: bool = False
 
 
 def hdfs_getmd5(
-        path: PathLike, recalculate: bool = False,
+        path: PathLike,
+        recalculate: bool = False,
         followlinks: bool = False) -> str:
     '''
     Get checksum of the file or dir.
@@ -264,6 +270,6 @@ def hdfs_open(
         buffering: Optional[int] = None,
         encoding: Optional[str] = None,
         errors: Optional[str] = None,
-        **kwargs) -> IO[AnyStr]:  # pytype: disable=signature-mismatch
+        **kwargs) -> IO:
     return HdfsPath(path).open(
         mode, buffering=buffering, encoding=encoding, errors=errors)

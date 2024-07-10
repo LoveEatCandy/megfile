@@ -3,7 +3,7 @@ from io import BytesIO
 from logging import getLogger as get_logger
 from typing import Optional
 
-from megfile.config import DEFAULT_BLOCK_SIZE, DEFAULT_MAX_BLOCK_SIZE, DEFAULT_MAX_BUFFER_SIZE
+from megfile.config import DEFAULT_MAX_BLOCK_SIZE, DEFAULT_MAX_BUFFER_SIZE, DEFAULT_MIN_BLOCK_SIZE
 from megfile.errors import raise_s3_error
 from megfile.interfaces import Seekable
 from megfile.lib.s3_buffered_writer import S3BufferedWriter
@@ -11,7 +11,7 @@ from megfile.lib.s3_buffered_writer import S3BufferedWriter
 _logger = get_logger(__name__)
 
 
-class S3LimitedSeekableWriter(Seekable, S3BufferedWriter):
+class S3LimitedSeekableWriter(S3BufferedWriter, Seekable):
     ''' For file format like msgpack and mp4, it's a pain that you need to write
     header before writing the data. So it's kind of hard to make streaming write
     to unseekable file system like s3. In this case, we will try to keep the first
@@ -25,7 +25,7 @@ class S3LimitedSeekableWriter(Seekable, S3BufferedWriter):
             key: str,
             *,
             s3_client,
-            block_size: int = DEFAULT_BLOCK_SIZE,
+            block_size: int = DEFAULT_MIN_BLOCK_SIZE,
             head_block_size: Optional[int] = None,
             tail_block_size: Optional[int] = None,
             max_block_size: int = DEFAULT_MAX_BLOCK_SIZE,
@@ -69,6 +69,8 @@ class S3LimitedSeekableWriter(Seekable, S3BufferedWriter):
             target_offset = self._offset + offset
         elif whence == os.SEEK_END:
             target_offset = self._content_size + offset
+        else:
+            raise OSError('Unsupported whence value: %d' % whence)
 
         if target_offset < self._head_block_size:
             self._head_buffer.seek(target_offset)
